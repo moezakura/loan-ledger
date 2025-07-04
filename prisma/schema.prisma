@@ -1,0 +1,133 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Custom fields from original spec
+  discordId   String? @unique @map("discord_id") // Made optional as NextAuth might not always provide it depending on scope
+  username    String? // Made optional, can be populated from Discord profile
+  displayName String? @map("display_name") // Can be populated from Discord profile
+
+  accounts         Account[]
+  sessions         Session[]
+  lentLoans        Loan[]     @relation("Lender")
+  borrowedLoans    Loan[]     @relation("Borrower")
+  uploadedEvidence Evidence[] @relation("Uploader")
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Loan {
+  id          String     @id @default(cuid())
+  lenderId    String     @map("lender_id")
+  borrowerId  String     @map("borrower_id")
+  amount      Decimal    @db.Decimal(15, 2)
+  currency    String     @default("JPY")
+  loanDate    DateTime   @map("loan_date") @db.Date
+  dueDate     DateTime?  @map("due_date") @db.Date
+  description String?    @db.Text
+  status      LoanStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  lender     User        @relation("Lender", fields: [lenderId], references: [id])
+  borrower   User        @relation("Borrower", fields: [borrowerId], references: [id])
+  repayments Repayment[]
+  evidence   Evidence[]
+
+  @@map("loans")
+}
+
+model Repayment {
+  id            String   @id @default(cuid())
+  loanId        String   @map("loan_id")
+  amount        Decimal  @db.Decimal(15, 2)
+  repaymentDate DateTime @map("repayment_date") @db.Date
+  description   String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  loan     Loan       @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  evidence Evidence[]
+
+  @@map("repayments")
+}
+
+model Evidence {
+  id            String   @id @default(cuid())
+  loanId        String?  @map("loan_id")
+  repaymentId   String?  @map("repayment_id")
+  fileName      String   @map("file_name")
+  filePath      String   @map("file_path") @db.Text
+  fileSize      Int?     @map("file_size")
+  mimeType      String?  @map("mime_type")
+  thumbnailPath String?  @map("thumbnail_path") @db.Text
+  uploadedById  String   @map("uploaded_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  loan       Loan?      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  repayment  Repayment? @relation(fields: [repaymentId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation("Uploader", fields: [uploadedById], references: [id])
+
+  @@map("evidence")
+}
+
+enum LoanStatus {
+  ACTIVE
+  COMPLETED
+  OVERDUE
+}
